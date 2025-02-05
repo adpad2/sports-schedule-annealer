@@ -6,6 +6,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cassert>
+#include <random>
 
 using namespace std;
 
@@ -13,12 +14,40 @@ using namespace std;
 class ScheduleAnnealer {
 public:
     ScheduleAnnealer(vector<vector<string>>& schedule, int num_teams) 
-        : schedule(schedule), num_teams(num_teams), schedule_length(schedule.size()) {
+        : schedule(schedule), num_teams(num_teams), schedule_length(schedule.size()), distribution(0.0, 1.0) {
         setup_annealer();
+        srand(1); // TODO - change seed to be random unless specified
     }
 
     void anneal() {
-        // Implement simulated annealing algorithm
+        cout << "Cost: " << calculate_schedule_cost() << endl;
+        for (float temperature = initial_temperature; temperature > min_temperature; temperature *= cooling_rate) {
+            for (int iter = 0; iter < iters_per_temp; iter++) {
+                vector<int> candidate_swap = choose_swap();
+                int idx1 = candidate_swap[0];
+                int idx2 = candidate_swap[1];
+                float swap_cost_change = calculate_cost_change(idx1, idx2);
+                if (distribution(generator) < exp(-swap_cost_change / temperature)) {
+                    // Update the team_to_games map.
+                    for (int i = 0; i < 2; i++) {
+                        string team1 = schedule[idx1][i];
+                        string team2 = schedule[idx2][i];
+                        
+                        if (team1 != schedule[idx2][0] && team1 != schedule[idx2][1]) {
+                            team_to_games[team1].erase(idx1);
+                            team_to_games[team1].insert(idx2);
+                        }
+                        if (team2 != schedule[idx1][0] && team2 != schedule[idx1][1]) {
+                            team_to_games[team2].erase(idx2);
+                            team_to_games[team2].insert(idx1);
+                        }
+                    }
+                    swap(schedule[idx1], schedule[idx2]);
+                }
+            }
+        }
+        print_schedule();
+        cout << "Cost: " << calculate_schedule_cost() << endl;
     }
 
 private:
@@ -37,6 +66,14 @@ private:
     // deviation_exponent = 2, the cost of a given schedule is the total squared deviation from the target
     // games played.
     float deviation_exponent = 2.0;
+    // Initial temperature for the simulated annealing algorithm.
+    float initial_temperature = 0.05;
+    // Number of iterations per temperature.
+    int iters_per_temp = 100000;
+    // Cooling rate for the simulated annealing algorithm.
+    float cooling_rate = 0.01;
+    // Temperature at which the annealing process stops.
+    float min_temperature = 0.01;
 
     /*=========================
         Pre-Processing Data
@@ -47,6 +84,10 @@ private:
     /*=========================
         Helper Functions
       =========================*/
+    // Generator for random numbers.
+    default_random_engine generator;
+    uniform_real_distribution<double> distribution;
+    
     // Pre-process schedule to improve efficiency of annealing algorithm.
     void setup_annealer() {
         for (int i = 0; i < schedule_length; i++) {
@@ -65,6 +106,16 @@ private:
                 team_to_games[team2].insert(i);
             }
         }
+    }
+
+    // Choose a swap of indices.
+    vector<int> choose_swap() {
+        int idx1, idx2;
+        do {
+            idx1 = rand() % schedule_length;
+            idx2 = rand() % schedule_length;
+        } while (idx1 == idx2);
+        return {idx1, idx2};
     }
 
     // This function returns the values at the closest index less than and greater than the given 
@@ -315,6 +366,7 @@ int main() {
     string schedule_str = "C,D;B,C;A,C;A,D;B,D;A,B";
     vector<vector<string>> schedule = parse_schedule(schedule_str);
     ScheduleAnnealer annealer = ScheduleAnnealer(schedule, 4);
+    annealer.anneal();
 
     return 0;
 }
