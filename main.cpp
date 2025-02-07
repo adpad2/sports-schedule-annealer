@@ -24,13 +24,17 @@ public:
         cout << "Initial Cost: " << calculate_schedule_cost() << endl;
         cout << "Initial Gap Distribution: " << calculate_gap_dist() << " (min/25/50/75/max)" << endl;
         
+        int iters_per_print = iters_per_temp / 10;
+        
         for (float temperature = initial_temperature; temperature > min_temperature; temperature *= cooling_rate) {
+            int num_accepted = 0;
             for (int iter = 0; iter < iters_per_temp; iter++) {
                 vector<int> candidate_swap = choose_swap();
                 int idx1 = candidate_swap[0];
                 int idx2 = candidate_swap[1];
                 float swap_cost_change = calculate_cost_change(idx1, idx2);
                 if (distribution(generator) < exp(-swap_cost_change / temperature)) {
+                    num_accepted++;
                     // Update the team_to_games map.
                     for (int i = 0; i < 2; i++) {
                         string team1 = schedule[idx1][i];
@@ -48,8 +52,10 @@ public:
                     swap(schedule[idx1], schedule[idx2]);
                 }
 
-                if (iter % 100000 == 0 && iter != 0) {
-                    cout << "Completed iteration " << iter << " for temperature " << temperature << endl;
+                if (iter % iters_per_print == 0 && iter != 0) {
+                    cout << "Iteration " << iter << " for temperature " << temperature << ": Acceptance Rate = " 
+                        << (float) num_accepted / iters_per_print << endl;
+                    num_accepted = 0;
                 }
             }
         }
