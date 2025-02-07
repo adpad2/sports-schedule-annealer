@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <random>
+#include <format>
 
 using namespace std;
 
@@ -20,7 +21,9 @@ public:
     }
 
     void anneal() {
-        cout << "Cost: " << calculate_schedule_cost() << endl;
+        cout << "Initial Cost: " << calculate_schedule_cost() << endl;
+        cout << "Initial Gap Distribution: " << calculate_gap_dist() << " (min/25/50/75/max)" << endl;
+        
         for (float temperature = initial_temperature; temperature > min_temperature; temperature *= cooling_rate) {
             for (int iter = 0; iter < iters_per_temp; iter++) {
                 vector<int> candidate_swap = choose_swap();
@@ -44,10 +47,15 @@ public:
                     }
                     swap(schedule[idx1], schedule[idx2]);
                 }
+
+                if (iter % 100000 == 0 && iter != 0) {
+                    cout << "Completed iteration " << iter << " for temperature " << temperature << endl;
+                }
             }
         }
-        print_schedule();
-        cout << "Cost: " << calculate_schedule_cost() << endl;
+        
+        cout << "Initial Cost: " << calculate_schedule_cost() << endl;
+        cout << "Initial Gap Distribution: " << calculate_gap_dist() << " (min/25/50/75/max)" << endl;
     }
 
 private:
@@ -63,17 +71,17 @@ private:
       =========================*/
     // Control how much to punish large deviations from the target number of games played. Specifically, the 
     // deviation from the target number of games played is raised to the deviation_exponent power. e.g. for 
-    // deviation_exponent = 2, the cost of a given schedule is the total squared deviation from the target
+    // deviation_exponent = 2.0, the cost of a given schedule is the total squared deviation from the target
     // games played.
-    float deviation_exponent = 2.0;
+    float deviation_exponent = 3.0;
     // Initial temperature for the simulated annealing algorithm.
-    float initial_temperature = 0.05;
+    float initial_temperature = 100.0;
     // Number of iterations per temperature.
     int iters_per_temp = 100000;
     // Cooling rate for the simulated annealing algorithm.
-    float cooling_rate = 0.01;
+    float cooling_rate = 0.3;
     // Temperature at which the annealing process stops.
-    float min_temperature = 0.01;
+    float min_temperature = 1.0;
 
     /*=========================
         Pre-Processing Data
@@ -301,19 +309,49 @@ private:
     }
 
     // Calculate the cost of the entire schedule as a function of the distances between games.
-    float calculate_schedule_cost() {
+    float calculate_schedule_cost(bool print_gaps = false) {
         float schedule_cost = 0.0;
         for (const auto& curr : team_to_games) {
+            if (print_gaps) { cout << curr.first << ":"; }
             // Iterate over the set of games for the current team and calculate the cost.
             auto it = curr.second.begin();
             auto prev = it;
             ++it;
             for (; it != curr.second.end(); ++it) {
-                schedule_cost += cost_func(*it - *prev);
+                int gap = *it - *prev;
+                schedule_cost += cost_func(gap);
+                if (print_gaps) { cout << " " << gap; }
+                prev = it;
+            }
+            if (print_gaps) { cout << endl; }
+        }
+        return schedule_cost;
+    }
+
+    // Calculate distribution statistics for the gaps.
+    string calculate_gap_dist() {
+        vector<int> gaps;
+        for (const auto& curr : team_to_games) {
+            // Iterate over the set of games for the current team and calculate the gap.
+            auto it = curr.second.begin();
+            auto prev = it;
+            ++it;
+            for (; it != curr.second.end(); ++it) {
+                int gap = *it - *prev;
+                gaps.push_back(gap);
                 prev = it;
             }
         }
-        return schedule_cost;
+
+        sort(gaps.begin(), gaps.end());
+
+        int min_gap = *gaps.begin();
+        int percentile_25_gap = *next(gaps.begin(), gaps.size() / 4);
+        int percentile_50_gap = *next(gaps.begin(), gaps.size() / 2);
+        int percentile_75_gap = *next(gaps.begin(), 3 * gaps.size() / 4);
+        int max_gap = *prev(gaps.end());
+
+        return to_string(min_gap) + '/' + to_string(percentile_25_gap) + '/' + to_string(percentile_50_gap) + '/' + to_string(percentile_75_gap) + '/' + to_string(max_gap);
     }
 
     // This is the cost function used to evaluate a single gap in the schedule.
@@ -361,11 +399,11 @@ vector<vector<string>> parse_schedule(string schedule_str) {
 
 
 int main() {
-    // string schedule_str = "TB,NO;CHI,PIT;KC,NYJ;PIT,GB;DAL,NYJ;CAR,DAL;HOU,OAK;PIT,BAL;CLE,IND;MIN,BUF;IND,BAL;BAL,CIN;TB,DET;HOU,IND;NYJ,BUF;SF,SEA;PHI,WAS;MIA,TEN;CLE,CIN;WAS,CHI;DEN,CIN;NYG,CHI;CHI,DET;BAL,STL;MIN,SF;TB,ATL;NO,BAL;IND,OAK;WAS,PHI;NYG,PHI;WAS,DAL;NYG,DEN;ARI,MIN;GB,CLE;PHI,TEN;CIN,BUF;WAS,NYG;TB,BUF;CLE,KC;STL,ARI;KC,SF;CAR,NYG;DEN,NE;MIN,NO;OAK,JAX;SF,ATL;CLE,PHI;TB,PHI;NYG,WAS;SD,DEN;TB,CLE;SEA,SF;CIN,OAK;CHI,CIN;IND,HOU;NYG,DAL;NYJ,ARI;JAX,SD;TEN,DAL;BUF,ATL;PHI,CIN;ATL,STL;ATL,CHI;SEA,NO;SEA,ARI;TEN,CIN;CIN,CLE;CIN,IND;CIN,NYG;KC,SD;SF,PIT;OAK,SD;ARI,KC;CAR,ATL;CAR,NO;OAK,GB;STL,MIA;ARI,HOU;CAR,WAS;KC,DEN;CAR,MIA;CIN,BAL;NO,ATL;GB,DET;SF,BAL;SF,WAS;JAX,DEN;CIN,PIT;JAX,DET;JAX,SF;GB,TEN;GB,ATL;TEN,KC;ATL,SD;MIA,KC;HOU,JAX;WAS,GB;HOU,NE;SD,OAK;STL,NE;TEN,STL;OAK,KC;KC,OAK;NE,SEA;CLE,PIT;PIT,MIN;BAL,NYJ;CHI,STL;MIN,TB;NYG,JAX;WAS,TB;NYG,DET;CHI,SEA;BAL,CLE;SD,KC;CAR,TB;GB,MIN;DEN,OAK;ARI,NYG;DAL,WAS;NE,BUF;SD,BAL;SF,STL;CIN,CAR;STL,SF;NYJ,SD;HOU,TEN;MIN,DET;NO,PHI;SF,NYG;NYJ,MIA;SF,ARI;DET,SEA;ARI,SEA;DAL,NO;NE,DAL;SD,TEN;MIA,CHI;STL,TB;SEA,HOU;BUF,BAL;NE,CLE;GB,CHI;BUF,JAX;CLE,NO;TB,CAR;SEA,STL;IND,TB;NE,MIA;DEN,PHI;WAS,OAK;SD,NYG;STL,SEA;BUF,MIA;HOU,MIA;DET,IND;PIT,CLE;NO,SF;STL,CAR;PIT,CIN;ARI,SF;JAX,NE;CLE,BAL;BAL,PIT;DET,MIN;BAL,ATL;ATL,NO;PHI,NYG;MIN,NE;DEN,CLE;NE,SD;NYJ,DEN;ARI,DET;MIN,CHI;GB,ARI;PHI,DAL;DAL,NYG;DAL,MIN;BUF,NO;OAK,CAR;SD,WAS;HOU,MIN;SEA,JAX;PIT,IND;DAL,PHI;BUF,NE;DAL,ARI;ATL,NYJ;PHI,CAR;PHI,GB;WAS,IND;NYJ,HOU;OAK,DEN;CLE,TEN;DET,KC;NYJ,NE;JAX,TEN;MIA,NYJ;GB,DAL;NE,PIT;MIN,GB;BAL,MIA;CHI,DAL;ATL,TB;DET,GB;PIT,HOU;NO,OAK;IND,TEN;TEN,IND;NO,GB;CHI,MIN;SD,CIN;CHI,GB;ATL,CAR;SEA,ATL;DAL,DEN;IND,JAX;ARI,STL;NYG,SEA;PHI,STL;ATL,WAS;OAK,NYJ;MIA,DET;SEA,PHI;NYJ,WAS;TEN,HOU;TEN,JAX;TB,ARI;MIA,BUF;IND,ARI;KC,HOU;MIA,DEN;NO,CAR;NO,TB;BUF,NYJ;KC,PIT;DET,CHI;NE,NYJ;JAX,HOU;DET,CAR;TEN,PIT;DEN,SEA;HOU,CHI;DEN,SD;BAL,JAX;MIA,NE;OAK,BUF;STL,MIN;IND,BUF;DET,SF;CAR,SD;BUF,CLE;JAX,IND;PIT,MIA;DEN,KC;KC,TB";
+    string schedule_str = "TB,NO;CHI,PIT;KC,NYJ;PIT,GB;DAL,NYJ;CAR,DAL;HOU,OAK;PIT,BAL;CLE,IND;MIN,BUF;IND,BAL;BAL,CIN;TB,DET;HOU,IND;NYJ,BUF;SF,SEA;PHI,WAS;MIA,TEN;CLE,CIN;WAS,CHI;DEN,CIN;NYG,CHI;CHI,DET;BAL,STL;MIN,SF;TB,ATL;NO,BAL;IND,OAK;WAS,PHI;NYG,PHI;WAS,DAL;NYG,DEN;ARI,MIN;GB,CLE;PHI,TEN;CIN,BUF;WAS,NYG;TB,BUF;CLE,KC;STL,ARI;KC,SF;CAR,NYG;DEN,NE;MIN,NO;OAK,JAX;SF,ATL;CLE,PHI;TB,PHI;NYG,WAS;SD,DEN;TB,CLE;SEA,SF;CIN,OAK;CHI,CIN;IND,HOU;NYG,DAL;NYJ,ARI;JAX,SD;TEN,DAL;BUF,ATL;PHI,CIN;ATL,STL;ATL,CHI;SEA,NO;SEA,ARI;TEN,CIN;CIN,CLE;CIN,IND;CIN,NYG;KC,SD;SF,PIT;OAK,SD;ARI,KC;CAR,ATL;CAR,NO;OAK,GB;STL,MIA;ARI,HOU;CAR,WAS;KC,DEN;CAR,MIA;CIN,BAL;NO,ATL;GB,DET;SF,BAL;SF,WAS;JAX,DEN;CIN,PIT;JAX,DET;JAX,SF;GB,TEN;GB,ATL;TEN,KC;ATL,SD;MIA,KC;HOU,JAX;WAS,GB;HOU,NE;SD,OAK;STL,NE;TEN,STL;OAK,KC;KC,OAK;NE,SEA;CLE,PIT;PIT,MIN;BAL,NYJ;CHI,STL;MIN,TB;NYG,JAX;WAS,TB;NYG,DET;CHI,SEA;BAL,CLE;SD,KC;CAR,TB;GB,MIN;DEN,OAK;ARI,NYG;DAL,WAS;NE,BUF;SD,BAL;SF,STL;CIN,CAR;STL,SF;NYJ,SD;HOU,TEN;MIN,DET;NO,PHI;SF,NYG;NYJ,MIA;SF,ARI;DET,SEA;ARI,SEA;DAL,NO;NE,DAL;SD,TEN;MIA,CHI;STL,TB;SEA,HOU;BUF,BAL;NE,CLE;GB,CHI;BUF,JAX;CLE,NO;TB,CAR;SEA,STL;IND,TB;NE,MIA;DEN,PHI;WAS,OAK;SD,NYG;STL,SEA;BUF,MIA;HOU,MIA;DET,IND;PIT,CLE;NO,SF;STL,CAR;PIT,CIN;ARI,SF;JAX,NE;CLE,BAL;BAL,PIT;DET,MIN;BAL,ATL;ATL,NO;PHI,NYG;MIN,NE;DEN,CLE;NE,SD;NYJ,DEN;ARI,DET;MIN,CHI;GB,ARI;PHI,DAL;DAL,NYG;DAL,MIN;BUF,NO;OAK,CAR;SD,WAS;HOU,MIN;SEA,JAX;PIT,IND;DAL,PHI;BUF,NE;DAL,ARI;ATL,NYJ;PHI,CAR;PHI,GB;WAS,IND;NYJ,HOU;OAK,DEN;CLE,TEN;DET,KC;NYJ,NE;JAX,TEN;MIA,NYJ;GB,DAL;NE,PIT;MIN,GB;BAL,MIA;CHI,DAL;ATL,TB;DET,GB;PIT,HOU;NO,OAK;IND,TEN;TEN,IND;NO,GB;CHI,MIN;SD,CIN;CHI,GB;ATL,CAR;SEA,ATL;DAL,DEN;IND,JAX;ARI,STL;NYG,SEA;PHI,STL;ATL,WAS;OAK,NYJ;MIA,DET;SEA,PHI;NYJ,WAS;TEN,HOU;TEN,JAX;TB,ARI;MIA,BUF;IND,ARI;KC,HOU;MIA,DEN;NO,CAR;NO,TB;BUF,NYJ;KC,PIT;DET,CHI;NE,NYJ;JAX,HOU;DET,CAR;TEN,PIT;DEN,SEA;HOU,CHI;DEN,SD;BAL,JAX;MIA,NE;OAK,BUF;STL,MIN;IND,BUF;DET,SF;CAR,SD;BUF,CLE;JAX,IND;PIT,MIA;DEN,KC;KC,TB";
     // Ideal: A,B;C,D;A,C;B,D;A,D;B,C
-    string schedule_str = "C,D;B,C;A,C;A,D;B,D;A,B";
+    // string schedule_str = "C,D;B,C;A,C;A,D;B,D;A,B";
     vector<vector<string>> schedule = parse_schedule(schedule_str);
-    ScheduleAnnealer annealer = ScheduleAnnealer(schedule, 4);
+    ScheduleAnnealer annealer = ScheduleAnnealer(schedule, 32);
     annealer.anneal();
 
     return 0;
