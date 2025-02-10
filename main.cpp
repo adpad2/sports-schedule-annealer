@@ -25,6 +25,7 @@ public:
         cout << "Initial Gap Distribution: " << calculate_gap_dist() << " (min/25/50/75/max)" << endl;
         
         int iters_per_print = iters_per_temp / 10;
+        float cum_cost = calculate_schedule_cost();
         
         for (float temperature = initial_temperature; temperature > min_temperature; temperature *= cooling_rate) {
             int num_accepted = 0;
@@ -35,6 +36,7 @@ public:
                 float swap_cost_change = calculate_cost_change(idx1, idx2);
                 if (distribution(generator) < exp(-swap_cost_change / temperature)) {
                     num_accepted++;
+                    cum_cost += swap_cost_change;
                     // Update the team_to_games map.
                     for (int i = 0; i < 2; i++) {
                         string team1 = schedule[idx1][i];
@@ -60,8 +62,8 @@ public:
             }
         }
         
-        cout << "Initial Cost: " << calculate_schedule_cost() << endl;
-        cout << "Initial Gap Distribution: " << calculate_gap_dist() << " (min/25/50/75/max)" << endl;
+        cout << "Final Cost: " << calculate_schedule_cost() << endl;
+        cout << "Final Gap Distribution: " << calculate_gap_dist() << " (min/25/50/75/max)" << endl;
     }
 
 private:
@@ -134,14 +136,19 @@ private:
 
     // This function returns the values at the closest index less than and greater than the given 
     // index (so, this function returns a vector with length 2).
-    vector<int> get_lower_upper_bounds(set<int>& games, int idx, bool allow_current_idx = true) {
+    vector<int> get_lower_upper_bounds(set<int>& games, int idx, vector<int> idxs_to_exclude = {}) {
         // Determine the closest index greater than the given index.
         set<int>::iterator upper_bound_iter = upper_bound(games.begin(), games.end(), idx);
+        // If the index is not allowed as the upper bound, push it forward one.
+        while (find(idxs_to_exclude.begin(), idxs_to_exclude.end(), *upper_bound_iter) != idxs_to_exclude.end()) {
+            upper_bound_iter = next(upper_bound_iter);
+        }
+        
         set<int>::iterator lower_bound_iter;
         int upper_bound;
         int lower_bound;
         
-        if (upper_bound_iter == games.end()) {
+        if (upper_bound_iter == games.end() || *upper_bound_iter < idx) {
             // If there are no indices greater than the given index, the upper value is -1 and the 
             // lower index is the last index in the set.
             lower_bound_iter = prev(games.end());
@@ -153,9 +160,8 @@ private:
             upper_bound = *upper_bound_iter;
         }
 
-        // If the current index is not allowed as the lower bound and the current lower index is the 
-        // current index, push the lower idx back one.
-        if ((!allow_current_idx) && *lower_bound_iter == idx) {
+        // If the index is not allowed as the lower bound, push it backward one.
+        while (lower_bound_iter != prev(games.begin()) && find(idxs_to_exclude.begin(), idxs_to_exclude.end(), *lower_bound_iter) != idxs_to_exclude.end()) {
             lower_bound_iter = prev(lower_bound_iter);
         }
         
@@ -179,7 +185,7 @@ private:
         
         // Ensure that idx1 is less than idx2.
         if (idx1 > idx2) {
-            swap(idx1, idx2);
+           swap(idx1, idx2);
         }
 
         vector<string> game1 = schedule[idx1];
@@ -198,13 +204,13 @@ private:
 
             // Determine the indices of games with this team to the left and right of this game (-1 if 
             // it doesn't exist).
-            vector<int> from_bounds = get_lower_upper_bounds(curr_games, idx1, false);
+            vector<int> from_bounds = get_lower_upper_bounds(curr_games, idx1, {idx1});
             int from_lower_bound_idx = from_bounds[0];
             int from_upper_bound_idx = from_bounds[1];
 
             // Determine the indices of games with this team to the left and right of the new swapped 
             // position of this game (-1 if it doesn't exist).
-            vector<int> to_bounds = get_lower_upper_bounds(curr_games, idx2);
+            vector<int> to_bounds = get_lower_upper_bounds(curr_games, idx2, {idx1});
             int to_lower_bound_idx = to_bounds[0];
             int to_upper_bound_idx = to_bounds[1];
             
@@ -260,13 +266,13 @@ private:
 
             // Determine the indices of games with this team to the left and right of this game (-1 if 
             // it doesn't exist).
-            vector<int> from_bounds = get_lower_upper_bounds(curr_games, idx2, false);
+            vector<int> from_bounds = get_lower_upper_bounds(curr_games, idx2, {idx2});
             int from_lower_bound_idx = from_bounds[0];
             int from_upper_bound_idx = from_bounds[1];
 
             // Determine the indices of games with this team to the left and right of the new swapped 
             // position of this game (-1 if it doesn't exist).
-            vector<int> to_bounds = get_lower_upper_bounds(curr_games, idx1);
+            vector<int> to_bounds = get_lower_upper_bounds(curr_games, idx1, {idx2});
             int to_lower_bound_idx = to_bounds[0];
             int to_upper_bound_idx = to_bounds[1];
             
@@ -363,7 +369,7 @@ private:
     // This is the cost function used to evaluate a single gap in the schedule.
     float cost_func(int gap) {
         // The target gap between conseuquent games for a given team is equal to num_teams / 2.
-        return pow(abs((num_teams / 2.0) - gap), deviation_exponent);
+        return pow(abs((num_teams / 2.0) - abs(gap)), deviation_exponent);
     }
 
     // Print the current schedule.
@@ -406,8 +412,7 @@ vector<vector<string>> parse_schedule(string schedule_str) {
 
 int main() {
     string schedule_str = "TB,NO;CHI,PIT;KC,NYJ;PIT,GB;DAL,NYJ;CAR,DAL;HOU,OAK;PIT,BAL;CLE,IND;MIN,BUF;IND,BAL;BAL,CIN;TB,DET;HOU,IND;NYJ,BUF;SF,SEA;PHI,WAS;MIA,TEN;CLE,CIN;WAS,CHI;DEN,CIN;NYG,CHI;CHI,DET;BAL,STL;MIN,SF;TB,ATL;NO,BAL;IND,OAK;WAS,PHI;NYG,PHI;WAS,DAL;NYG,DEN;ARI,MIN;GB,CLE;PHI,TEN;CIN,BUF;WAS,NYG;TB,BUF;CLE,KC;STL,ARI;KC,SF;CAR,NYG;DEN,NE;MIN,NO;OAK,JAX;SF,ATL;CLE,PHI;TB,PHI;NYG,WAS;SD,DEN;TB,CLE;SEA,SF;CIN,OAK;CHI,CIN;IND,HOU;NYG,DAL;NYJ,ARI;JAX,SD;TEN,DAL;BUF,ATL;PHI,CIN;ATL,STL;ATL,CHI;SEA,NO;SEA,ARI;TEN,CIN;CIN,CLE;CIN,IND;CIN,NYG;KC,SD;SF,PIT;OAK,SD;ARI,KC;CAR,ATL;CAR,NO;OAK,GB;STL,MIA;ARI,HOU;CAR,WAS;KC,DEN;CAR,MIA;CIN,BAL;NO,ATL;GB,DET;SF,BAL;SF,WAS;JAX,DEN;CIN,PIT;JAX,DET;JAX,SF;GB,TEN;GB,ATL;TEN,KC;ATL,SD;MIA,KC;HOU,JAX;WAS,GB;HOU,NE;SD,OAK;STL,NE;TEN,STL;OAK,KC;KC,OAK;NE,SEA;CLE,PIT;PIT,MIN;BAL,NYJ;CHI,STL;MIN,TB;NYG,JAX;WAS,TB;NYG,DET;CHI,SEA;BAL,CLE;SD,KC;CAR,TB;GB,MIN;DEN,OAK;ARI,NYG;DAL,WAS;NE,BUF;SD,BAL;SF,STL;CIN,CAR;STL,SF;NYJ,SD;HOU,TEN;MIN,DET;NO,PHI;SF,NYG;NYJ,MIA;SF,ARI;DET,SEA;ARI,SEA;DAL,NO;NE,DAL;SD,TEN;MIA,CHI;STL,TB;SEA,HOU;BUF,BAL;NE,CLE;GB,CHI;BUF,JAX;CLE,NO;TB,CAR;SEA,STL;IND,TB;NE,MIA;DEN,PHI;WAS,OAK;SD,NYG;STL,SEA;BUF,MIA;HOU,MIA;DET,IND;PIT,CLE;NO,SF;STL,CAR;PIT,CIN;ARI,SF;JAX,NE;CLE,BAL;BAL,PIT;DET,MIN;BAL,ATL;ATL,NO;PHI,NYG;MIN,NE;DEN,CLE;NE,SD;NYJ,DEN;ARI,DET;MIN,CHI;GB,ARI;PHI,DAL;DAL,NYG;DAL,MIN;BUF,NO;OAK,CAR;SD,WAS;HOU,MIN;SEA,JAX;PIT,IND;DAL,PHI;BUF,NE;DAL,ARI;ATL,NYJ;PHI,CAR;PHI,GB;WAS,IND;NYJ,HOU;OAK,DEN;CLE,TEN;DET,KC;NYJ,NE;JAX,TEN;MIA,NYJ;GB,DAL;NE,PIT;MIN,GB;BAL,MIA;CHI,DAL;ATL,TB;DET,GB;PIT,HOU;NO,OAK;IND,TEN;TEN,IND;NO,GB;CHI,MIN;SD,CIN;CHI,GB;ATL,CAR;SEA,ATL;DAL,DEN;IND,JAX;ARI,STL;NYG,SEA;PHI,STL;ATL,WAS;OAK,NYJ;MIA,DET;SEA,PHI;NYJ,WAS;TEN,HOU;TEN,JAX;TB,ARI;MIA,BUF;IND,ARI;KC,HOU;MIA,DEN;NO,CAR;NO,TB;BUF,NYJ;KC,PIT;DET,CHI;NE,NYJ;JAX,HOU;DET,CAR;TEN,PIT;DEN,SEA;HOU,CHI;DEN,SD;BAL,JAX;MIA,NE;OAK,BUF;STL,MIN;IND,BUF;DET,SF;CAR,SD;BUF,CLE;JAX,IND;PIT,MIA;DEN,KC;KC,TB";
-    // Ideal: A,B;C,D;A,C;B,D;A,D;B,C
-    // string schedule_str = "C,D;B,C;A,C;A,D;B,D;A,B";
+    //string schedule_str = "C,D;B,C;A,C;A,D;B,D;A,B";
     vector<vector<string>> schedule = parse_schedule(schedule_str);
     ScheduleAnnealer annealer = ScheduleAnnealer(schedule, 32);
     annealer.anneal();
