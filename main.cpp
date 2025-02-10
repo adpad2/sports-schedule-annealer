@@ -8,6 +8,9 @@
 #include <cassert>
 #include <random>
 #include <format>
+#include <queue>
+#include <tuple>
+#include <limits>
 
 using namespace std;
 
@@ -54,10 +57,16 @@ public:
                     swap(schedule[idx1], schedule[idx2]);
                 }
 
+                // Print the annealing progress after iters_per_print iterations.
                 if (iter % iters_per_print == 0 && iter != 0) {
                     cout << "Iteration " << iter << " for temperature " << temperature << ": Acceptance Rate = " 
                         << (float) num_accepted / iters_per_print << endl;
                     num_accepted = 0;
+                }
+                
+                // Refresh the set of worst games after (refresh_freq * num_worst_games^2) iterations.
+                if (iter % (int) (refresh_freq * pow(num_worst_games, 2)) == 0 && iter != 0) {
+                    refresh_worst_games();
                 }
             }
         }
@@ -90,12 +99,25 @@ private:
     float cooling_rate = 0.3;
     // Temperature at which the annealing process stops.
     float min_temperature = 1.0;
+    // The number of games to include in the set of all possible swaps (by choosing the n games that have 
+    // the highest benefit when removed).
+    int num_worst_games = 128;
+    // The refresh rate for the set of n worst games (the set of n worst games is refreshed after k * n^2 
+    // iterations of the annealer). So, a lower value of refresh_freq will keep n_worst_games more fresh at 
+    // the cost of extra computation time.
+    float refresh_freq = 0.01;
 
     /*=========================
         Pre-Processing Data
       =========================*/
     // Track the indices of games for each team.
     unordered_map<string, set<int>> team_to_games;
+    // Track the cost of removing the game at the given index (negative change means removing the 
+    // game is beneficial).
+    vector<float> cost_of_removing_game;
+    // Track the indices of the games which have the best change in cost when they are removed. This 
+    // set of indices will be refreshed after (refresh_freq * num_worst_games^2) iterations.
+    vector<int> worst_games;
 
     /*=========================
         Helper Functions
@@ -107,8 +129,10 @@ private:
     // Pre-process schedule to improve efficiency of annealing algorithm.
     void setup_annealer() {
         for (int i = 0; i < schedule_length; i++) {
+            // For every game in the schedule, determine the two teams in that game.
             string team1 = schedule[i][0];
             string team2 = schedule[i][1];
+            // Add this game to the vector of games that each team has played.
             if (team_to_games.find(team1) == team_to_games.end()) {
                 set<int> games = {i};
                 team_to_games[team1] = games;
@@ -122,16 +146,97 @@ private:
                 team_to_games[team2].insert(i);
             }
         }
+
+        // Initialize the set of worst games.
+        refresh_worst_games();
     }
 
-    // Choose a swap of indices.
+    // Recompute the set of worst games.
+    void refresh_worst_games() {
+        cost_of_removing_game = vector<float>(schedule_length, 0.0);
+        for (auto const& curr : team_to_games) {
+            set<int> games = curr.second;
+            auto prev_it = games.begin();
+            auto curr_it = next(prev_it);
+            auto next_it = next(curr_it);
+
+            // Currently, prev_it is the first index and curr_it is the second index.
+            cost_of_removing_game[*prev_it] -= cost_func(*curr_it - *prev_it);
+            
+            while (next_it != games.end()) {
+                float curr_prev_cost = cost_func(*curr_it - *prev_it);
+                float next_curr_cost = cost_func(*next_it - *curr_it);
+                float next_prev_cost = cost_func(*next_it - *prev_it);
+                // If you remove this game, the cost will change since the two existing gaps will 
+                // be merged into one larger gap.
+                cost_of_removing_game[*curr_it] += next_prev_cost - curr_prev_cost - next_curr_cost;
+
+                // Update all the iterators
+                prev_it = curr_it;
+                curr_it = next_it;
+                ++next_it;
+            }
+            
+            // Currently, curr_it is the last index and prev_it is the second last index.
+            cost_of_removing_game[*curr_it] -= cost_func(*curr_it - *prev_it);
+        }
+        
+        worst_games = get_n_lowest_indices(cost_of_removing_game, num_worst_games);
+    }
+
+    // Iterate over arr and return the indices of the n lowest values.
+    vector<int> get_n_lowest_indices(vector<float>& arr, int n) {
+        // If arr doesn't have n elements or more, it is impossible to return the indices of the n 
+        // lowest elements.
+        assert(arr.size() >= n);
+        
+        // Create a helper struct to compare tuples based on the first element ("<" is used to create 
+        // a max heap).
+        struct compare {
+            bool operator()(const tuple<int, int>& a, const tuple<int, int>& b) {
+                return get<0>(a) < get<0>(b);
+            }
+        };
+        
+        priority_queue<tuple<float, int>, vector<tuple<float, int>>, compare> max_heap;
+        // Initialize the max heap with the first n elements in arr.
+        for (int i = 0; i < n; i++) {
+            max_heap.push(make_tuple(arr[i], i));
+        }
+
+        // For each remaining element in arr, if the element is less than the maximum element in the 
+        // max heap, then replace the top element with the this element.
+        for (int i = n; i < arr.size(); i++) {
+            if (arr[i] < get<0>(max_heap.top())) {
+                max_heap.pop();
+                max_heap.push(make_tuple(arr[i], i));
+            }
+        }
+
+        // Create a vector with all the indices in the max heap.
+        vector<int> idxs_found;
+        while (!max_heap.empty()) {
+            idxs_found.push_back(get<1>(max_heap.top()));
+            max_heap.pop();
+        }
+
+        return idxs_found;
+    }
+
+    // Choose a swap of indices by randomly selecting two of the games that are contributing the most 
+    // to the cost.
     vector<int> choose_swap() {
-        int idx1, idx2;
+        //int idx1 = rand() % schedule_length;
+        int idx1 = rand() % num_worst_games;
+        int idx2;
+        // Ensure that the two indices chosen aren't the same.
         do {
-            idx1 = rand() % schedule_length;
-            idx2 = rand() % schedule_length;
+            //idx2 = rand() % schedule_length;
+            idx2 = rand() % num_worst_games;
         } while (idx1 == idx2);
-        return {idx1, idx2};
+        
+        //return {idx1, idx2};
+        return {worst_games[idx1], worst_games[idx2]};
     }
 
     // This function returns the values at the closest index less than and greater than the given 
@@ -387,6 +492,13 @@ private:
             }
             cout << endl;
         }
+    }
+
+    void print_worst_games() {
+        for (int game : worst_games) {
+            cout << game << " ";
+        }
+        cout << endl;
     }
 };
 
