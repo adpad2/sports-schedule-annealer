@@ -226,17 +226,25 @@ private:
     // Choose a swap of indices by randomly selecting two of the games that are contributing the most 
     // to the cost.
     vector<int> choose_swap() {
-        //int idx1 = rand() % schedule_length;
-        int idx1 = rand() % num_worst_games;
-        int idx2;
-        // Ensure that the two indices chosen aren't the same.
-        do {
-            //idx2 = rand() % schedule_length;
-            idx2 = rand() % num_worst_games;
-        } while (idx1 == idx2);
-        
-        //return {idx1, idx2};
-        return {worst_games[idx1], worst_games[idx2]};
+        if (rand() % 2 == 0) {
+            int idx1 = rand() % schedule_length;
+            int idx2;
+            // Ensure that the two indices chosen aren't the same.
+            do {
+                idx2 = rand() % schedule_length;
+            } while (idx1 == idx2);
+            
+            return {idx1, idx2};
+        } else {
+            int idx1 = rand() % num_worst_games;
+            int idx2;
+            // Ensure that the two indices chosen aren't the same.
+            do {
+                idx2 = rand() % num_worst_games;
+            } while (idx1 == idx2);
+            
+            return {worst_games[idx1], worst_games[idx2]};
+        }
     }
 
     // This function returns the values at the closest index less than and greater than the given 
