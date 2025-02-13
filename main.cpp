@@ -92,13 +92,13 @@ private:
     // games played.
     float deviation_exponent = 3.0;
     // Initial temperature for the simulated annealing algorithm.
-    float initial_temperature = 100.0;
+    float initial_temperature = 1000.0;
     // Number of iterations per temperature.
-    int iters_per_temp = 100000;
+    int iters_per_temp = 500000;
     // Cooling rate for the simulated annealing algorithm.
     float cooling_rate = 0.3;
     // Temperature at which the annealing process stops.
-    float min_temperature = 1.0;
+    float min_temperature = 10.0;
     // The number of games to include in the set of all possible swaps (by choosing the n games that have 
     // the highest benefit when removed).
     int num_worst_games = 128;
@@ -223,10 +223,12 @@ private:
         return idxs_found;
     }
 
-    // Choose a swap of indices by randomly selecting two of the games that are contributing the most 
-    // to the cost.
+    // Choose a swap of indices by either 1) randomly selecting two of the games that are contributing 
+    // the most to the cost or 2) randomly selecting 2 games.
     vector<int> choose_swap() {
-        if (rand() % 2 == 0) {
+        // There is a 1/2 chance of choosing a random swap and a 1/2 chance of choosing a swap from the 
+        // curated list of games.
+        if (rand() % 3 == 0) {
             int idx1 = rand() % schedule_length;
             int idx2;
             // Ensure that the two indices chosen aren't the same.
